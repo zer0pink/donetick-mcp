@@ -1,5 +1,6 @@
 """Unit tests for Donetick API client."""
 
+import httpx
 import pytest
 from pytest_httpx import HTTPXMock
 
@@ -1322,3 +1323,71 @@ class TestDonetickClient:
             assert details.averageDuration == 9000.5  # Seconds (float)
             assert len(details.completionHistory) == 1
             assert details.completionHistory[0].completedBy == 1  # User ID (integer)
+
+
+class TestTokenAuth:
+    """Tests for API token auth via the `secretkey` header."""
+
+    def _token_client(self) -> DonetickClient:
+        return DonetickClient(
+            base_url="https://test.donetick.com",
+            token="test_secret_key",
+            rate_limit_per_second=100.0,
+            rate_limit_burst=100,
+        )
+
+    def test_secretkey_header_set(self):
+        """Token auth sets the `secretkey` header and no Bearer token."""
+        client = self._token_client()
+        assert client.token == "test_secret_key"
+        assert client.client.headers["secretkey"] == "test_secret_key"
+        assert "Authorization" not in client.client.headers
+
+    @pytest.mark.asyncio
+    async def test_request_uses_secretkey_without_login(self, httpx_mock: HTTPXMock):
+        """Requests authenticate via `secretkey` with no login round-trip.
+
+        No login endpoint is mocked; pytest_httpx would error if login were called.
+        """
+        httpx_mock.add_response(
+            url="https://test.donetick.com/api/v1/chores/",
+            json={"res": []},
+            method="GET",
+        )
+
+        client = self._token_client()
+        async with client:
+            chores = await client.list_chores()
+
+        assert chores == []
+        assert client._jwt_token is None  # never logged in
+        request = httpx_mock.get_requests()[0]
+        assert request.headers["secretkey"] == "test_secret_key"
+
+    @pytest.mark.asyncio
+    async def test_401_raises_without_login_retry(self, httpx_mock: HTTPXMock):
+        """A 401 under token auth raises immediately without attempting login."""
+        httpx_mock.add_response(
+            url="https://test.donetick.com/api/v1/chores/",
+            status_code=401,
+            method="GET",
+        )
+
+        client = self._token_client()
+        with pytest.raises(httpx.HTTPStatusError, match="invalid API token"):
+            async with client:
+                await client.list_chores()
+
+        # Exactly one request made; no login POST attempted.
+        requests = httpx_mock.get_requests()
+        assert len(requests) == 1
+        assert requests[0].url.path == "/api/v1/chores/"
+
+    @pytest.mark.asyncio
+    async def test_login_is_noop_with_token(self, httpx_mock: HTTPXMock):
+        """Calling login() explicitly is a no-op when token auth is configured."""
+        client = self._token_client()
+        async with client:
+            await client.login()
+        assert client._jwt_token is None
+        assert httpx_mock.get_requests() == []

@@ -27,8 +27,9 @@ class Config:
         self.host = os.getenv("MCP_HOST", "0.0.0.0")
         self.port = int(os.getenv("MCP_PORT", "8000"))
 
-        # Check for deprecated API token
-        self.donetick_api_token = os.getenv("DONETICK_API_TOKEN")
+        # API token auth via the `secretkey` header (alternative to username/password JWT).
+        # DONETICK_API_TOKEN is accepted as a legacy alias for DONETICK_TOKEN.
+        self.donetick_token = os.getenv("DONETICK_TOKEN") or os.getenv("DONETICK_API_TOKEN")
 
         # Validate required configuration (skip if in test mode)
         if os.getenv("PYTEST_CURRENT_TEST") is None:
@@ -37,7 +38,6 @@ class Config:
     def _validate(self):
         """Validate that required configuration is present and secure."""
         errors = []
-        warnings = []
 
         # Check base URL
         if not self.donetick_base_url:
@@ -54,32 +54,19 @@ class Config:
                     f"Got: {self.donetick_base_url[:50]}"
                 )
 
-        # Check for deprecated API token
-        if self.donetick_api_token:
-            warnings.append(
-                "DONETICK_API_TOKEN is deprecated in v2.0.0. "
-                "Please migrate to JWT authentication using DONETICK_USERNAME and DONETICK_PASSWORD. "
-                "See migration guide: https://github.com/yourusername/donetick-mcp-server#migration"
-            )
-
-        # Check username and password for JWT auth
-        if not self.donetick_username:
-            errors.append(
-                "DONETICK_USERNAME environment variable is required. "
-                "Please set it to your Donetick account username."
-            )
-
-        if not self.donetick_password:
-            errors.append(
-                "DONETICK_PASSWORD environment variable is required. "
-                "Please set it to your Donetick account password."
-            )
-
-        # Log warnings
-        if warnings:
-            logger = logging.getLogger(__name__)
-            for warning in warnings:
-                logger.warning(warning)
+        # Authentication: either an API token (`secretkey` header) or username+password (JWT).
+        # Token auth takes precedence and skips the login round-trip.
+        if not self.donetick_token:
+            if not self.donetick_username:
+                errors.append(
+                    "Authentication is not configured. Set DONETICK_TOKEN for API token "
+                    "auth, or DONETICK_USERNAME and DONETICK_PASSWORD for JWT auth."
+                )
+            elif not self.donetick_password:
+                errors.append(
+                    "DONETICK_PASSWORD environment variable is required for username/password "
+                    "auth. Alternatively, set DONETICK_TOKEN for API token auth."
+                )
 
         # Raise all errors together
         if errors:

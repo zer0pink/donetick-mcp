@@ -87,6 +87,7 @@ class DonetickClient:
         base_url: str | None = None,
         username: str | None = None,
         password: str | None = None,
+        token: str | None = None,
         rate_limit_per_second: float | None = None,
         rate_limit_burst: int | None = None,
     ):
@@ -97,12 +98,14 @@ class DonetickClient:
             base_url: Donetick instance URL (defaults to config)
             username: Donetick username (defaults to config)
             password: Donetick password (defaults to config)
+            token: Donetick API token for `secretkey` header auth (defaults to config)
             rate_limit_per_second: Rate limit in requests per second (defaults to config)
             rate_limit_burst: Maximum burst size (defaults to config)
         """
         self.base_url = (base_url or config.donetick_base_url).rstrip("/")
         self.username = username or config.donetick_username
         self.password = password or config.donetick_password
+        self.token = token or config.donetick_token
         self._jwt_token: str | None = None
         self.rate_limiter = TokenBucket(
             rate=rate_limit_per_second or config.rate_limit_per_second,
@@ -130,6 +133,11 @@ class DonetickClient:
             follow_redirects=True,  # Follow HTTP redirects (e.g. 301)
         )
 
+        # API token auth: send the token on every request via the `secretkey`
+        # header. No login round-trip is needed in this mode.
+        if self.token:
+            self.client.headers["secretkey"] = self.token
+
     async def __aenter__(self):
         """Async context manager entry."""
         return self
@@ -154,6 +162,10 @@ class DonetickClient:
             httpx.HTTPError: On authentication failure
             ValueError: If login response doesn't contain token
         """
+        if self.token:
+            logger.debug("API token auth in use; skipping JWT login")
+            return
+
         url = f"{self.base_url}/api/v1/auth/login"
 
         logger.debug("Authenticating with Donetick API")
@@ -212,8 +224,9 @@ class DonetickClient:
         Raises:
             httpx.HTTPError: On HTTP errors after all retries exhausted
         """
-        # Ensure we have a valid JWT token (lazy initialization)
-        if self._jwt_token is None:
+        # Lazy JWT login for username/password auth. Token auth uses the
+        # `secretkey` header set at construction and needs no login.
+        if self.token is None and self._jwt_token is None:
             await self.login()
 
         url = f"{self.base_url}{path}"
@@ -239,6 +252,13 @@ class DonetickClient:
 
                 # Handle authentication errors (401 Unauthorized)
                 if response.status_code == 401:
+                    if self.token is not None:
+                        logger.error("Authentication failed (401): invalid API token")
+                        raise httpx.HTTPStatusError(
+                            "Authentication failed: invalid API token",
+                            request=response.request,
+                            response=response,
+                        )
                     if not auth_retry_attempted:
                         logger.warning("Authentication failed (401), refreshing JWT token")
                         auth_retry_attempted = True
@@ -276,6 +296,9 @@ class DonetickClient:
                 await asyncio.sleep(wait_time)
 
             except httpx.HTTPStatusError as e:
+                # Token auth cannot recover from 401 by re-logging in; never retry it.
+                if e.response.status_code == 401 and self.token is not None:
+                    raise
                 # Don't retry client errors (4xx) except 429 and 401
                 if 400 <= e.response.status_code < 500 and e.response.status_code not in (429, 401):
                     logger.error(f"Client error: {e.response.status_code} - {e.response.text}")

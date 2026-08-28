@@ -1029,7 +1029,8 @@ def main():
 
     logger.info(f"Starting Donetick MCP Server v{__version__}")
     logger.info(f"Connecting to: {sanitize_url(config.donetick_base_url)}")
-    logger.info(f"Username: {config.donetick_username}")
+    auth_mode = "API token (secretkey)" if config.donetick_token else f"username/password ({config.donetick_username})"
+    logger.info(f"Auth: {auth_mode}")
     logger.info(f"Transport: {config.transport}")
 
     try:
