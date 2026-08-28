@@ -581,14 +581,16 @@ class DonetickClient:
         """
         logger.info(f"Completing chore {chore_id}")
 
-        params = {}
+        # The /do endpoint binds a JSON body (ShouldBindJSON); an empty POST
+        # fails with 400 "Invalid request", so always send a body (at least {}).
+        body: dict[str, Any] = {}
         if completed_by is not None:
-            params["completedBy"] = completed_by
+            body["completedBy"] = completed_by
 
         data = await self._request(
             "POST",
             f"/api/v1/chores/{chore_id}/do",
-            params=params,
+            json=body,
         )
 
         # Handle both direct object and wrapped response

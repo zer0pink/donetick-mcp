@@ -228,6 +228,26 @@ class TestDonetickClient:
 
         assert chore.id == 1
         assert chore.name == "Test Chore"
+        # Must send a JSON body (the API binds it); no body → 400 Invalid request.
+        import json as _json
+        do_request = next(r for r in httpx_mock.get_requests() if r.url.path == "/api/v1/chores/1/do")
+        assert _json.loads(do_request.read()) == {}
+
+    @pytest.mark.asyncio
+    async def test_complete_chore_completed_by(self, client, sample_chore_data, httpx_mock: HTTPXMock, mock_login):
+        """completed_by is sent in the JSON body as `completedBy`."""
+        httpx_mock.add_response(
+            url="https://test.donetick.com/api/v1/chores/1/do",
+            json=sample_chore_data,
+            method="POST",
+        )
+
+        async with client:
+            await client.complete_chore(1, completed_by=7)
+
+        import json as _json
+        do_request = next(r for r in httpx_mock.get_requests() if r.url.path == "/api/v1/chores/1/do")
+        assert _json.loads(do_request.read()) == {"completedBy": 7}
 
     @pytest.mark.asyncio
     async def test_update_chore_basic(self, client, sample_chore_data, httpx_mock: HTTPXMock, mock_login):
