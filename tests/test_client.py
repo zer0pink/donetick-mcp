@@ -1214,6 +1214,7 @@ class TestDonetickClient:
                 "performedAt": "2025-11-05T10:00:00Z",
                 "completedBy": 1,
                 "note": "Completed successfully",
+                "status": 1,
                 "assignedTo": 1,
                 "dueDate": "2025-11-05T00:00:00Z",
             },
@@ -1224,6 +1225,7 @@ class TestDonetickClient:
                 "performedAt": "2025-11-04T10:00:00Z",
                 "completedBy": 1,
                 "note": None,
+                "status": 2,
                 "assignedTo": 1,
                 "dueDate": "2025-11-04T00:00:00Z",
             },
@@ -1248,8 +1250,10 @@ class TestDonetickClient:
             assert history[0].choreId == 123
             assert history[0].completedBy == 1  # User ID (integer), not username
             assert history[0].note == "Completed successfully"
+            assert history[0].status == "completed"  # int 1 → "completed"
             assert history[1].id == 2
             assert history[1].note is None
+            assert history[1].status == "skipped"  # int 2 → "skipped"
 
     @pytest.mark.asyncio
     async def test_get_all_chores_history(self, httpx_mock: HTTPXMock, mock_login):

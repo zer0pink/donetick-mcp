@@ -538,6 +538,18 @@ class UserProfile(BaseModel):
     metadata: Optional[dict[str, Any]] = Field(None, description="Additional user metadata")
 
 
+# Donetick returns chore-history status as an integer enum
+# (internal/chore/model/model.go: ChoreHistoryStatus int8).
+HISTORY_STATUS_BY_CODE = {
+    0: "started",
+    1: "completed",
+    2: "skipped",
+    3: "pending_approval",
+    4: "rejected",
+    5: "missed",
+    6: "rescheduled",
+}
+
 class ChoreHistory(BaseModel):
     """Model for chore completion history entry."""
 
@@ -552,7 +564,10 @@ class ChoreHistory(BaseModel):
     dueDate: Optional[str] = Field(None, description="Original due date (ISO 8601)")
     status: str = Field(
         default="completed",
-        description="Completion status: completed, skipped, missed, pending_approval"
+        description=(
+            "Completion status: started, completed, skipped, pending_approval, "
+            "rejected, missed, rescheduled"
+        )
     )
     points: Optional[int] = Field(None, ge=0, description="Points awarded for completion")
     duration: Optional[int] = Field(None, ge=0, description="Time to completion in seconds")
@@ -586,16 +601,28 @@ class ChoreHistory(BaseModel):
                 'or ISO 8601 format'
             )
 
-    @field_validator('status')
+    @field_validator('status', mode='before')
     @classmethod
-    def validate_status(cls, v: str) -> str:
-        """Validate history status value."""
-        valid_statuses = ['completed', 'skipped', 'missed', 'pending_approval']
-        if v.lower() not in valid_statuses:
+    def validate_status(cls, v: Any) -> str:
+        """Normalize history status.
+
+        The API returns an integer enum (0=started, 1=completed, 2=skipped,
+        3=pending_approval, 4=rejected, 5=missed, 6=rescheduled). Accept both
+        the integer codes and the canonical string names.
+        """
+        if isinstance(v, bool):
+            raise ValueError(f'invalid history status: {v!r}')
+        if isinstance(v, int):
+            try:
+                return HISTORY_STATUS_BY_CODE[v]
+            except KeyError:
+                raise ValueError(f'unknown history status code: {v}')
+        valid = set(HISTORY_STATUS_BY_CODE.values())
+        if str(v).lower() not in valid:
             raise ValueError(
-                f'status must be one of: {", ".join(valid_statuses)}'
+                f'status must be one of: {", ".join(sorted(valid))}'
             )
-        return v.lower()
+        return str(v).lower()
 
 
 class ChoreDetail(BaseModel):
