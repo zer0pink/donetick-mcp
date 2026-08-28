@@ -1213,7 +1213,7 @@ class TestDonetickClient:
                 
                 "performedAt": "2025-11-05T10:00:00Z",
                 "completedBy": 1,
-                "note": "Completed successfully",
+                "notes": "Completed successfully",  # API returns key "notes", not "note"
                 "status": 1,
                 "assignedTo": 1,
                 "dueDate": "2025-11-05T00:00:00Z",

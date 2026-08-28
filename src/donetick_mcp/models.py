@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 
 class Assignee(BaseModel):
@@ -560,7 +560,12 @@ class ChoreHistory(BaseModel):
     performedAt: str = Field(..., description="When the chore was performed (ISO 8601 datetime)")
     completedBy: int = Field(..., description="User ID who completed the chore")
     assignedTo: Optional[int] = Field(None, description="User ID the chore was assigned to")
-    note: Optional[str] = Field(None, max_length=5000, description="Completion note")
+    note: Optional[str] = Field(
+        None,
+        max_length=5000,
+        validation_alias=AliasChoices("notes", "note"),
+        description="Completion note",
+    )
     dueDate: Optional[str] = Field(None, description="Original due date (ISO 8601)")
     status: str = Field(
         default="completed",
